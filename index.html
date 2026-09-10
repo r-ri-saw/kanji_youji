@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>漢字かきとり</title>
+
+<!--
+  外部ライブラリ（CDN）
+  SheetJS: .xlsxをJavaScriptで読み込む
+-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+/* ═══════════════════════════════
+   CSS 変数 / リセット
+═══════════════════════════════ */
+:root {
+  --green:       #2d9b6a;
+  --green-d:     #1e7a52;
+  --green-light: #e8f7f0;
+  --green-mid:   #a8dfc5;
+  --orange:      #e8732a;
+  --orange-light:#fff3eb;
+  --yellow:      #f5c842;
+  --red:         #e84444;
+  --red-light:   #fef0f0;
+  --bg:          #f0f7f3;
+  --card:        #ffffff;
+  --text:        #1a2e1a;
+  --muted:       #7a8f7a;
+  --border:      #d6e8d6;
+  --shadow:      0 4px 24px rgba(45,155,106,0.12);
+  --radius:      20px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body {
+  font-family: 'Hiragino Maru Gothic ProN','Hiragino Maru Gothic Pro','BIZ UDGothic','Meiryo',sans-serif;
+  background: var(--bg); color: var(--text);
+  min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  padding: 14px 12px 56px;
+}
+
+/* ═══════════════════════════════
+   ユーティリティ
+═══════════════════════════════ */
+.hidden { display: none !important; }
+
+.screen {
+  width: 100%; max-width: 480px;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+}
+
+/* ═══════════════════════════════
+   共通ヘッダー
+═══════════════════════════════ */
+.app-header {
+  width: 100%; max-width: 480px;
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 4px;
+}
+.logo { font-size: 1.2rem; font-weight: 900; color: var(--green); }
+.logo span { color: var(--orange); }
+.hdr-right { display: flex; gap: 8px; align-items: center; }
+
+/* ═══════════════════════════════
+   カード
+═══════════════════════════════ */
+.card {
+  width: 100%; background: var(--card);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  border: 1.5px solid var(--border); padding: 22px 20px 20px;
+}
+
+/* ═══════════════════════════════
+   ボタン（共通）
+═══════════════════════════════ */
+.btn {
+  width: 100%; border: none; border-radius: 16px; padding: 15px;
+  font-family: inherit; font-size: 1rem; font-weight: 700;
+  cursor: pointer; transition: transform .12s, opacity .15s;
+  letter-spacing: .02em; display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.btn:active { transform: scale(.97); }
+.btn-primary  { background: linear-gradient(135deg, var(--green), var(--green-d)); color: #fff; box-shadow: 0 4px 14px rgba(45,155,106,.28); }
+.btn-danger   { background: var(--red-light); color: var(--red); border: 2px solid #f5b8b8; }
+.btn-ghost    { background: var(--card); border: 2px solid var(--border); color: var(--muted); }
+.btn-icon     { border: 1.5px solid var(--border); border-radius: 12px; padding: 6px 13px; background: var(--card); font-family: inherit; font-size: .78rem; font-weight: 700; color: var(--muted); cursor: pointer; }
+.btn:disabled { opacity: .4; pointer-events: none; }
+
+/* ═══════════════════════════════
+   ローディング画面 (#screen-loading)
+═══════════════════════════════ */
+#screen-loading {
+  min-height: 60vh; justify-content: center; align-items: center; gap: 16px;
+}
+.spinner {
+  width: 48px; height: 48px; border: 5px solid var(--border);
+  border-top-color: var(--green); border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-msg { font-size: .9rem; color: var(--muted); font-weight: 600; }
+
+/* エラー画面 */
+#screen-error .error-box {
+  background: var(--red-light); border: 2px solid #f5b8b8;
+  border-radius: 16px; padding: 20px; text-align: center;
+}
+#screen-error .error-box h2 { color: var(--red); font-size: 1rem; margin-bottom: 8px; }
+#screen-error .error-box p  { font-size: .85rem; color: var(--muted); line-height: 1.6; }
+
+/* ═══════════════════════════════
+   ホーム画面 (#screen-home)
+═══════════════════════════════ */
+.home-title   { font-size: 1.4rem; font-weight: 900; color: var(--green); text-align: center; }
+.home-sub     { font-size: .8rem; color: var(--muted); text-align: center; }
+
+/* 教科タブ */
+.subject-tabs { display: flex; gap: 0; width: 100%; border-radius: 14px; overflow: hidden; border: 1.5px solid var(--border); }
+.subject-tab  {
+  flex: 1; padding: 11px 4px; font-family: inherit; font-size: .85rem;
+  font-weight: 700; background: var(--card); border: none; cursor: pointer;
+  color: var(--muted); transition: background .15s, color .15s;
+}
+.subject-tab.active { background: var(--green); color: #fff; }
+
+/* 単元選択 */
+.unit-section-title { font-size: .72rem; font-weight: 700; color: var(--muted); letter-spacing: .06em; margin-bottom: 8px; }
+.unit-list { display: flex; flex-direction: column; gap: 8px; }
+.unit-btn {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 16px; border-radius: 14px; border: 2px solid var(--border);
+  background: var(--card); cursor: pointer; font-family: inherit;
+  font-size: .95rem; font-weight: 700; color: var(--text);
+  transition: border-color .15s, background .15s;
+}
+.unit-btn.selected  { border-color: var(--green); background: var(--green-light); color: var(--green); }
+.unit-btn .u-count  { font-size: .72rem; font-weight: 600; color: var(--muted); }
+.unit-btn.selected .u-count { color: var(--green); }
+.unit-check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: .8rem; flex-shrink: 0; }
+.unit-btn.selected .unit-check { background: var(--green); border-color: var(--green); color: #fff; }
+
+/* 統計ミニバー */
+.stats-mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stats-mini-item { background: var(--green-light); border-radius: 12px; padding: 10px 4px; text-align: center; }
+.stats-mini-item .sn { font-size: 1.4rem; font-weight: 900; color: var(--green); display: block; }
+.stats-mini-item .sl { font-size: .68rem; color: var(--muted); font-weight: 600; }
+
+/* 更新ボタン */
+.update-row { display: flex; gap: 8px; width: 100%; }
+.update-row .btn { flex: 1; }
+
+/* ═══════════════════════════════
+   学習画面 (#screen-study)
+═══════════════════════════════ */
+.progress-wrap { width: 100%; max-width: 480px; }
+.progress-label { display: flex; justify-content: space-between; font-size: .74rem; color: var(--muted); font-weight: 600; margin-bottom: 5px; }
+.progress-track { width: 100%; height: 8px; background: var(--border); border-radius: 99px; overflow: hidden; }
+.progress-fill  { height: 100%; background: linear-gradient(90deg, var(--green), #52c98c); border-radius: 99px; transition: width .5s ease; }
+
+.drill-badge { display: inline-block; background: var(--green-light); color: var(--green); border-radius: 8px; padding: 2px 10px; font-size: .72rem; font-weight: 700; margin-bottom: 14px; }
+
+.q-label { font-size: .74rem; color: var(--muted); font-weight: 700; letter-spacing: .06em; margin-bottom: 6px; }
+.q-main  { font-size: 2rem; font-weight: 900; color: var(--green); letter-spacing: .1em; margin-bottom: 10px; line-height: 1.3; }
+.q-ctx   { font-size: .9rem; color: var(--muted); line-height: 1.7; background: var(--bg); border-radius: 10px; padding: 8px 12px; margin-bottom: 18px; }
+.q-ctx .blank { display: inline-block; border-bottom: 2.5px solid var(--green); background: var(--green-light); border-radius: 4px; padding: 0 4px; color: transparent; user-select: none; }
+
+/* {{}} で囲まれたひらがな部分 → 下線 */
+.q-underline {
+  border-bottom: 2.5px solid var(--green);
+  padding-bottom: 1px;
+  font-weight: 900;
+  color: var(--green);
+}
+
+/* ヒント表示エリア */
+.hint-row { display: flex; gap: 6px; margin-bottom: 14px; }
+.hint-tag { font-size: .72rem; background: var(--orange-light); color: var(--orange); border-radius: 8px; padding: 3px 10px; font-weight: 700; }
+.memo-tag { font-size: .72rem; background: var(--green-light); color: var(--green); border-radius: 8px; padding: 3px 10px; font-weight: 700; }
+
+.write-box { width: 100%; min-height: 86px; border: 2.5px dashed var(--green-mid); border-radius: 16px; background: #f8fcfa; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+.write-placeholder { font-size: .88rem; color: var(--green-mid); font-weight: 600; text-align: center; }
+
+.answer-reveal { display: none; background: var(--green-light); border: 2px solid var(--green); border-radius: 14px; padding: 14px 18px; margin-bottom: 16px; text-align: center; }
+.answer-reveal.show { display: block; }
+.answer-kanji { font-size: 2rem; font-weight: 900; color: var(--text); letter-spacing: .08em; display: block; margin-bottom: 4px; }
+.answer-sub   { font-size: .78rem; color: var(--muted); font-weight: 600; }
+
+/* ストリーク星 */
+.streak-row { display: flex; gap: 6px; justify-content: center; margin-top: 12px; }
+.star { font-size: 1.25rem; filter: grayscale(1) opacity(.25); transition: filter .3s, transform .3s; }
+.star.lit { filter: none; transform: scale(1.15); }
+.master-badge { display: none; background: var(--yellow); color: #7a5a00; border-radius: 10px; padding: 3px 14px; font-size: .78rem; font-weight: 900; margin-top: 6px; text-align: center; }
+.master-badge.show { display: block; }
+
+/* フェーズ別ボタン表示 */
+.btn-row { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 10px; }
+.btn-show  { }
+.btn-ok    { display: none; }
+.btn-wrong { display: none; }
+.btn-next  { display: none; }
+.btn-back  { }
+
+.phase-write .btn-show  { display: flex; }
+.phase-write .btn-ok    { display: none; }
+.phase-write .btn-wrong { display: none; }
+.phase-write .btn-next  { display: none; }
+
+.phase-judge .btn-show  { display: none; }
+.phase-judge .btn-ok    { display: flex; }
+.phase-judge .btn-wrong { display: flex; }
+.phase-judge .btn-next  { display: none; }
+
+.phase-next .btn-show   { display: none; }
+.phase-next .btn-ok     { display: none; }
+.phase-next .btn-wrong  { display: none; }
+.phase-next .btn-next   { display: flex; }
+
+/* ═══════════════════════════════
+   履歴画面 (#screen-history)
+═══════════════════════════════ */
+.history-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+.hist-item { background: var(--green-light); border-radius: 14px; padding: 13px; text-align: center; }
+.hist-item .hn { font-size: 1.7rem; font-weight: 900; color: var(--green); display: block; }
+.hist-item .hl { font-size: .7rem; color: var(--muted); font-weight: 600; }
+
+.word-list-title { font-size: .74rem; font-weight: 700; color: var(--muted); letter-spacing: .05em; margin-bottom: 8px; }
+.word-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-radius: 10px; margin-bottom: 5px; font-size: .86rem; font-weight: 500; }
+.word-item.mastered   { background: var(--green-light); color: var(--green); }
+.word-item.learning   { background: var(--orange-light); color: var(--orange); }
+.word-item.struggling { background: var(--red-light); color: var(--red); }
+.wi-badge { font-size: .68rem; font-weight: 700; padding: 2px 8px; border-radius: 99px; }
+.word-item.mastered   .wi-badge { background: var(--green); color: #fff; }
+.word-item.learning   .wi-badge { background: var(--orange); color: #fff; }
+.word-item.struggling .wi-badge { background: var(--red); color: #fff; }
+
+/* ═══════════════════════════════
+   お祝いオーバーレイ
+═══════════════════════════════ */
+#celebration {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  pointer-events: none; z-index: 200; opacity: 0;
+}
+#celebration.pop { animation: celebpop 1.8s ease forwards; }
+@keyframes celebpop {
+  0%  { opacity:0; transform:scale(.6); }
+  18% { opacity:1; transform:scale(1.06); }
+  80% { opacity:1; transform:scale(1); }
+  100%{ opacity:0; }
+}
+.celeb-inner { background: var(--yellow); border-radius: 24px; padding: 22px 36px; font-size: 1.3rem; font-weight: 900; color: #7a5a00; text-align: center; box-shadow: 0 8px 40px rgba(0,0,0,.18); }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════
+  共通ヘッダー
+══════════════════════════════════════════ -->
+<header class="app-header">
+  <div class="logo">漢字<span>かきとり</span></div>
+  <div class="hdr-right">
+    <div id="hdr-master" class="hidden" style="background:var(--card);border:1.5px solid var(--border);border-radius:20px;padding:4px 12px;font-size:.78rem;font-weight:700;color:var(--muted);display:flex;align-items:center;gap:4px;">
+      🏆<span id="hdr-master-num" style="color:var(--green);font-size:1rem;">0</span>
+    </div>
+    <button id="btn-to-history" class="btn-icon hidden" onclick="showScreen('history')">きろく</button>
+    <button id="btn-to-home"    class="btn-icon hidden" onclick="showScreen('home')">ホーム</button>
+  </div>
+</header>
+
+<!-- ══════════════════════════════════════════
+  ① ローディング画面
+══════════════════════════════════════════ -->
+<div id="screen-loading" class="screen">
+  <div class="spinner"></div>
+  <div class="loading-msg" id="loading-msg">問題データを読み込み中…</div>
+</div>
+
+<!-- ══════════════════════════════════════════
+  エラー画面
+══════════════════════════════════════════ -->
+<div id="screen-error" class="screen hidden">
+  <div class="card">
+    <div class="error-box">
+      <h2>⚠️ 読み込みエラー</h2>
+      <p id="error-msg">data/kanji_youji.xlsx が見つかりませんでした。<br>GitHubにファイルをアップロードしてください。</p>
+    </div>
+  </div>
+  <button class="btn btn-primary" onclick="loadXlsx()">🔄 再読み込み</button>
+</div>
+
+<!-- ══════════════════════════════════════════
+  ② ホーム画面
+══════════════════════════════════════════ -->
+<div id="screen-home" class="screen hidden">
+
+  <div class="home-title">漢字<span style="color:var(--orange)">かきとり</span></div>
+  <div class="home-sub" id="home-sub">問題データを読み込み中…</div>
+
+  <!-- 教科タブ -->
+  <div id="subject-tabs" class="subject-tabs"></div>
+
+  <!-- 単元選択 -->
+  <div class="card">
+    <div class="unit-section-title">れんしゅうする単元を選んでね（複数OK）</div>
+    <div id="unit-list" class="unit-list"></div>
+  </div>
+
+  <!-- 統計ミニバー -->
+  <div class="card">
+    <div class="unit-section-title" style="margin-bottom:10px">学習じょうきょう</div>
+    <div class="stats-mini">
+      <div class="stats-mini-item"><span class="sn" id="home-stat-total">0</span><span class="sl">といた数</span></div>
+      <div class="stats-mini-item"><span class="sn" id="home-stat-master">0</span><span class="sl">マスター</span></div>
+      <div class="stats-mini-item"><span class="sn" id="home-stat-rate">0%</span><span class="sl">せいかいりつ</span></div>
+    </div>
+  </div>
+
+  <!-- ボタン群 -->
+  <button id="btn-start" class="btn btn-primary" onclick="startStudy()" disabled>スタート！</button>
+
+  <div class="update-row">
+    <button class="btn btn-ghost" onclick="loadXlsx(true)">🔄 問題データ更新</button>
+    <button class="btn btn-ghost" onclick="showScreen('history')">📊 きろく</button>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════
+  ③ 学習画面
+══════════════════════════════════════════ -->
+<div id="screen-study" class="screen hidden">
+
+  <!-- プログレス -->
+  <div class="progress-wrap" style="max-width:480px;width:100%">
+    <div class="progress-label">
+      <span id="prog-label">マスター達成率</span>
+      <span id="prog-frac"></span>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+  </div>
+
+  <!-- 問題カード -->
+  <div class="card">
+    <div class="drill-badge" id="study-badge">4・5月</div>
+
+    <div class="q-label">もんだい</div>
+    <div class="q-main" id="q-main" style="font-size:1.5rem;line-height:1.7;letter-spacing:0.04em;"></div>
+
+    <!-- ヒント（重要度・メモ） -->
+    <div class="hint-row" id="hint-row"></div>
+
+    <div class="write-area-label" style="font-size:.74rem;color:var(--muted);font-weight:700;letter-spacing:.06em;margin-bottom:8px;">✏️ ノートに書いてみよう</div>
+    <div class="write-box"><div class="write-placeholder">ここは空欄です<br>紙やノートに書いてね</div></div>
+
+    <!-- 答え -->
+    <div class="answer-reveal" id="answer-reveal">
+      <span class="answer-kanji" id="answer-kanji"></span>
+      <span class="answer-sub">こたえをかくにんしよう ✓</span>
+    </div>
+
+    <!-- ストリーク -->
+    <div class="streak-row">
+      <span class="star" id="st1">⭐</span>
+      <span class="star" id="st2">⭐</span>
+      <span class="star" id="st3">⭐</span>
+    </div>
+    <div class="master-badge" id="master-badge">🏆 マスター！</div>
+  </div>
+
+  <!-- ボタン -->
+  <div class="btn-row phase-write" id="study-btn-row">
+    <button class="btn btn-primary btn-show" onclick="showAnswer()">📖 答えを見る</button>
+    <button class="btn btn-primary btn-ok"   onclick="markCorrect()">⭕ できた！</button>
+    <button class="btn btn-danger  btn-wrong" onclick="markWrong()">❌ まちがえた</button>
+    <button class="btn btn-ghost   btn-next"  onclick="nextQuestion()">→ 次の問題へ</button>
+    <button class="btn btn-ghost   btn-back"  onclick="showScreen('home')">← もどる</button>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════
+  ④ 履歴画面
+══════════════════════════════════════════ -->
+<div id="screen-history" class="screen hidden">
+  <div class="card">
+    <div class="unit-section-title" style="margin-bottom:14px;">📊 学習きろく</div>
+    <div class="history-grid">
+      <div class="hist-item"><span class="hn" id="h-total">0</span><span class="hl">といた数</span></div>
+      <div class="hist-item"><span class="hn" id="h-correct">0</span><span class="hl">せいかい数</span></div>
+      <div class="hist-item"><span class="hn" id="h-master">0</span><span class="hl">マスター</span></div>
+      <div class="hist-item"><span class="hn" id="h-rate">0%</span><span class="hl">せいかいりつ</span></div>
+    </div>
+    <div class="word-list-title">ことばのじょうたい（といたもの）</div>
+    <div id="history-word-list"></div>
+  </div>
+  <button class="btn btn-ghost" onclick="showScreen('home')">← もどる</button>
+  <button class="btn btn-danger" onclick="confirmResetHistory()" style="margin-top:4px;font-size:.85rem;padding:12px;">🗑 学習履歴をリセット</button>
+</div>
+
+<!-- お祝い -->
+<div id="celebration"><div class="celeb-inner" id="celeb-msg">🎉</div></div>
+
+<!-- ══════════════════════════════════════════
+  JavaScript
+══════════════════════════════════════════ -->
+<script>
+'use strict';
+
+/* ─────────────────────────────────────────
+   設定
+───────────────────────────────────────── */
+const XLSX_PATH    = 'data/kanji_youji.xlsx';
+const STORAGE_KEY  = 'kanjigame_v4';
+const MASTER_STREAK = 3;   // 何回連続正解でマスター
+
+/* ─────────────────────────────────────────
+   ストレージ（localStorage フォールバック付き）
+───────────────────────────────────────── */
+let _store = null;
+function getStore() {
+  if (_store) return _store;
+  try {
+    localStorage.setItem('__t', '1'); localStorage.removeItem('__t');
+    _store = localStorage;
+  } catch {
+    // localStorage 使用不可（ローカルファイル等）→ メモリ内のみ
+    const mem = {};
+    _store = {
+      getItem: k => mem[k] ?? null,
+      setItem: (k, v) => { mem[k] = v; },
+      removeItem: k => { delete mem[k]; },
+    };
+  }
+  return _store;
+}
+function loadState()  { try { const s = getStore().getItem(STORAGE_KEY); return s ? JSON.parse(s) : null; } catch { return null; } }
+function saveState()  { try { getStore().setItem(STORAGE_KEY, JSON.stringify(state)); } catch {} }
+
+/* ─────────────────────────────────────────
+   アプリ状態
+───────────────────────────────────────── */
+/*
+  問題データ構造（Excelから読み込み後）:
+  db = {
+    '漢字': {                        // シート名 = 教科
+      '4・5月': [                    // 単元
+        { id, subject, unit, mondai, kotae, jyuyo, memo, ...extra },
+        ...
+      ],
+      ...
+    },
+    ...
+  }
+*/
+let db      = {};          // 問題データベース（Excelから生成）
+let state   = null;        // 学習履歴
+let currentSubject = '';   // 選択中の教科
+let selectedUnits  = new Set();  // 選択中の単元
+let activeWords    = [];   // 今回の出題リスト
+let currentWord    = null; // 表示中の問題
+
+/* ─────────────────────────────────────────
+   画面切り替え
+───────────────────────────────────────── */
+const SCREENS = ['loading', 'error', 'home', 'study', 'history'];
+
+function showScreen(name) {
+  SCREENS.forEach(s => {
+    document.getElementById(`screen-${s}`).classList.toggle('hidden', s !== name);
+  });
+
+  // ヘッダーボタン表示制御
+  const inStudy   = name === 'study';
+  const inHome    = name === 'home';
+  const inHistory = name === 'history';
+  const showMaster = inStudy || inHistory;
+
+  document.getElementById('hdr-master').classList.toggle('hidden', !showMaster);
+  document.getElementById('btn-to-history').classList.toggle('hidden', !inStudy);
+  document.getElementById('btn-to-home').classList.toggle('hidden', inHome || name === 'loading' || name === 'error');
+
+  if (name === 'history') renderHistory();
+  if (name === 'home') renderHomeStats();
+}
+
+/* ─────────────────────────────────────────
+   Excel 読み込み
+───────────────────────────────────────── */
+async function loadXlsx(forceRefresh = false) {
+  showScreen('loading');
+  document.getElementById('loading-msg').textContent = '問題データを読み込み中…';
+
+  try {
+    // キャッシュバスター（強制更新時）
+    const url = forceRefresh
+      ? `${XLSX_PATH}?v=${Date.now()}`
+      : XLSX_PATH;
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
+
+    const buf  = await res.arrayBuffer();
+    const wb   = XLSX.read(buf, { type: 'array' });
+
+    db = {};
+    wb.SheetNames.forEach(sheetName => {
+      const ws   = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      // 列名マッピング（将来の列追加に対応）
+      const words = rows
+        .filter(r => r['問題'] && r['答え'])  // 問題・答えが空の行はスキップ
+        .map((r, idx) => {
+          const unit = String(r['単元'] || '未分類').trim();
+          return {
+            id:      `${sheetName}_${unit}_${idx}`,
+            subject: sheetName,
+            unit:    unit,
+            mondai:  String(r['問題']).trim(),
+            kotae:   String(r['答え']).trim(),
+            jyuyo:   Number(r['重要度'] ?? 2),
+            memo:    String(r['メモ']   || '').trim(),
+            // 将来の列（あれば自動取得）
+            hint:    String(r['ヒント'] || '').trim(),
+            tag:     String(r['タグ']   || '').trim(),
+            freq:    r['出題頻度'] ?? null,
+          };
+        });
+
+      // 単元ごとにグループ化
+      const byUnit = {};
+      words.forEach(w => {
+        if (!byUnit[w.unit]) byUnit[w.unit] = [];
+        byUnit[w.unit].push(w);
+      });
+      db[sheetName] = byUnit;
+    });
+
+    if (Object.keys(db).length === 0) throw new Error('シートが見つかりませんでした');
+
+    // 読み込み済み問題のIDをstateへ反映（問題追加に対応）
+    ensureStateForAllWords();
+
+    // 最初の教科をデフォルト選択
+    currentSubject = Object.keys(db)[0];
+    selectedUnits  = new Set();
+
+    renderHome();
+    showScreen('home');
+
+  } catch (err) {
+    console.error(err);
+    document.getElementById('error-msg').textContent =
+      `${XLSX_PATH} の読み込みに失敗しました。\n\nGitHubに data/kanji_youji.xlsx をアップロードしてください。\n\nエラー: ${err.message}`;
+    showScreen('error');
+  }
+}
+
+/* ─────────────────────────────────────────
+   ステート初期化・補完
+───────────────────────────────────────── */
+function initState() {
+  return { progress: {}, totalCorrect: 0, totalAttempts: 0 };
+}
+
+function ensureStateForAllWords() {
+  if (!state) state = loadState() || initState();
+  // 全問題に対して progress エントリを保証（新問題追加時も対応）
+  Object.values(db).forEach(units => {
+    Object.values(units).forEach(words => {
+      words.forEach(w => {
+        if (!state.progress[w.id]) {
+          state.progress[w.id] = { streak: 0, wrong: 0, mastered: false, totalCorrect: 0 };
+        }
+      });
+    });
+  });
+  saveState();
+}
+
+/* ─────────────────────────────────────────
+   ホーム画面レンダリング
+───────────────────────────────────────── */
+function renderHome() {
+  renderSubjectTabs();
+  renderUnitList();
+  renderHomeStats();
+  updateHomeSubtitle();
+}
+
+function updateHomeSubtitle() {
+  const subjects = Object.keys(db);
+  let total = 0;
+  subjects.forEach(s => Object.values(db[s]).forEach(u => { total += u.length; }));
+  document.getElementById('home-sub').textContent = `${subjects.length}教科 / 全${total}問`;
+}
+
+function renderSubjectTabs() {
+  const container = document.getElementById('subject-tabs');
+  container.innerHTML = '';
+  Object.keys(db).forEach(sub => {
+    const btn = document.createElement('button');
+    btn.className = 'subject-tab' + (sub === currentSubject ? ' active' : '');
+    btn.textContent = sub;
+    btn.onclick = () => { currentSubject = sub; selectedUnits = new Set(); renderSubjectTabs(); renderUnitList(); };
+    container.appendChild(btn);
+  });
+}
+
+function renderUnitList() {
+  const container = document.getElementById('unit-list');
+  container.innerHTML = '';
+  if (!db[currentSubject]) return;
+
+  Object.entries(db[currentSubject]).forEach(([unit, words]) => {
+    const mastered = words.filter(w => state.progress[w.id]?.mastered).length;
+    const btn = document.createElement('button');
+    btn.className = 'unit-btn' + (selectedUnits.has(unit) ? ' selected' : '');
+    btn.innerHTML = `
+      <span>${unit}</span>
+      <span style="display:flex;align-items:center;gap:8px">
+        <span class="u-count">${mastered}/${words.length}問</span>
+        <span class="unit-check">${selectedUnits.has(unit) ? '✓' : ''}</span>
+      </span>`;
+    btn.onclick = () => {
+      selectedUnits.has(unit) ? selectedUnits.delete(unit) : selectedUnits.add(unit);
+      renderUnitList();
+      document.getElementById('btn-start').disabled = selectedUnits.size === 0;
+    };
+    container.appendChild(btn);
+  });
+  document.getElementById('btn-start').disabled = selectedUnits.size === 0;
+}
+
+function renderHomeStats() {
+  if (!state) return;
+  const total   = state.totalAttempts;
+  const correct = state.totalCorrect;
+  const master  = Object.values(state.progress).filter(p => p.mastered).length;
+  const rate    = total > 0 ? Math.round(correct / total * 100) : 0;
+  document.getElementById('home-stat-total').textContent  = total;
+  document.getElementById('home-stat-master').textContent = master;
+  document.getElementById('home-stat-rate').textContent   = rate + '%';
+  document.getElementById('hdr-master-num').textContent   = master;
+}
+
+/* ─────────────────────────────────────────
+   学習開始
+───────────────────────────────────────── */
+function startStudy() {
+  if (selectedUnits.size === 0) return;
+  activeWords = [];
+  selectedUnits.forEach(unit => {
+    if (db[currentSubject]?.[unit]) {
+      activeWords = activeWords.concat(db[currentSubject][unit]);
+    }
+  });
+  showScreen('study');
+  renderQuestion();
+}
+
+/* ─────────────────────────────────────────
+   問題選択（重み付きランダム）
+───────────────────────────────────────── */
+function pickWord() {
+  const notMastered = activeWords.filter(w => !state.progress[w.id]?.mastered);
+  const pool = notMastered.length > 0 ? notMastered : activeWords;
+
+  const weights = pool.map(w => {
+    const p = state.progress[w.id] || { streak: 0, wrong: 0 };
+    // 間違い多い→重く / 連続正解多い→軽く / 重要度が高い→やや重く
+    const jyuyo = w.jyuyo || 2;
+    return Math.max(0.2, 1 + p.wrong * 3 - p.streak * 0.5 + (jyuyo - 2) * 0.5);
+  });
+
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < pool.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return pool[i];
+  }
+  return pool[pool.length - 1];
+}
+
+/* ─────────────────────────────────────────
+   問題レンダリング
+───────────────────────────────────────── */
+function renderQuestion() {
+  currentWord = pickWord();
+  const p = state.progress[currentWord.id] || { streak: 0, mastered: false };
+
+  document.getElementById('study-badge').textContent  = `${currentWord.subject} / ${currentWord.unit}`;
+  document.getElementById('answer-kanji').textContent = currentWord.kotae;
+
+  // 問題文: mondai 列の {{ひらがな}} を下線付きひらがなに変換
+  // 例: "{{じょうほう}}を整理する" → <span class="q-underline">じょうほう</span>を整理する
+  const qEl = document.getElementById('q-main');
+  const mondai = currentWord.mondai || '';
+  qEl.innerHTML = mondai.replace(/\{\{([^}]+)\}\}/g,
+    (_, yomi) => `<span class="q-underline">${yomi}</span>`
+  );
+
+  // ヒント行（重要度・タグ・ヒント）
+  const hintRow = document.getElementById('hint-row');
+  hintRow.innerHTML = '';
+  if (currentWord.jyuyo >= 3) {
+    const t = document.createElement('span');
+    t.className = 'hint-tag'; t.textContent = '⭐ 重要';
+    hintRow.appendChild(t);
+  }
+  if (currentWord.tag) {
+    const t = document.createElement('span');
+    t.className = 'memo-tag'; t.textContent = '🏷 ' + currentWord.tag;
+    hintRow.appendChild(t);
+  }
+  if (currentWord.hint) {
+    const t = document.createElement('span');
+    t.className = 'memo-tag'; t.textContent = '💡 ' + currentWord.hint;
+    hintRow.appendChild(t);
+  }
+
+  document.getElementById('answer-reveal').classList.remove('show');
+  setPhase('write');
+  renderStreak(p.streak, p.mastered);
+  renderProgress();
+  updateMasterCount();
+}
+
+function setPhase(phase) {
+  document.getElementById('study-btn-row').className = `btn-row phase-${phase}`;
+}
+
+function renderStreak(streak, mastered) {
+  for (let i = 1; i <= MASTER_STREAK; i++) {
+    document.getElementById(`st${i}`).classList.toggle('lit', i <= streak);
+  }
+  document.getElementById('master-badge').classList.toggle('show', mastered);
+}
+
+function renderProgress() {
+  const mastered = activeWords.filter(w => state.progress[w.id]?.mastered).length;
+  const pct = Math.round(mastered / activeWords.length * 100);
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('prog-frac').textContent = `${mastered} / ${activeWords.length}`;
+}
+
+function updateMasterCount() {
+  const n = Object.values(state.progress).filter(p => p.mastered).length;
+  document.getElementById('hdr-master-num').textContent = n;
+}
+
+/* ─────────────────────────────────────────
+   操作
+───────────────────────────────────────── */
+function showAnswer() {
+  document.getElementById('answer-reveal').classList.add('show');
+  setPhase('judge');
+}
+
+function markCorrect() {
+  const p = state.progress[currentWord.id];
+  p.streak = Math.min(p.streak + 1, MASTER_STREAK);
+  p.totalCorrect++;
+  state.totalCorrect++;
+  state.totalAttempts++;
+
+  if (p.streak >= MASTER_STREAK && !p.mastered) {
+    p.mastered = true;
+    celebrate(`🏆「${currentWord.kotae}」マスター！`);
+  }
+  saveState();
+  setPhase('next');
+  renderStreak(p.streak, p.mastered);
+  renderProgress();
+  updateMasterCount();
+}
+
+function markWrong() {
+  const p = state.progress[currentWord.id];
+  p.streak = 0;
+  p.wrong++;
+  state.totalAttempts++;
+  saveState();
+  setPhase('next');
+  renderStreak(p.streak, p.mastered);
+}
+
+function nextQuestion() { renderQuestion(); }
+
+function celebrate(msg) {
+  const el = document.getElementById('celebration');
+  document.getElementById('celeb-msg').textContent = msg;
+  el.classList.remove('pop');
+  void el.offsetWidth;
+  el.classList.add('pop');
+}
+
+/* ─────────────────────────────────────────
+   履歴画面
+───────────────────────────────────────── */
+function renderHistory() {
+  const total   = state.totalAttempts;
+  const correct = state.totalCorrect;
+  const master  = Object.values(state.progress).filter(p => p.mastered).length;
+  const rate    = total > 0 ? Math.round(correct / total * 100) : 0;
+
+  document.getElementById('h-total').textContent   = total;
+  document.getElementById('h-correct').textContent = correct;
+  document.getElementById('h-master').textContent  = master;
+  document.getElementById('h-rate').textContent    = rate + '%';
+  document.getElementById('hdr-master-num').textContent = master;
+
+  // 全問題を対象に一覧化
+  const allWords = [];
+  Object.values(db).forEach(units => Object.values(units).forEach(words => allWords.push(...words)));
+
+  const attempted = allWords
+    .filter(w => { const p = state.progress[w.id]; return p && (p.totalCorrect > 0 || p.wrong > 0); })
+    .sort((a, b) => {
+      const pa = state.progress[a.id], pb = state.progress[b.id];
+      if (pa.mastered !== pb.mastered) return pa.mastered ? -1 : 1;
+      return pb.wrong - pa.wrong;
+    });
+
+  const container = document.getElementById('history-word-list');
+  container.innerHTML = '';
+
+  if (attempted.length === 0) {
+    container.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:12px 0">まだといていないよ</div>';
+    return;
+  }
+
+  attempted.forEach(w => {
+    const p   = state.progress[w.id];
+    const cls = p.mastered ? 'mastered' : p.wrong >= 3 ? 'struggling' : 'learning';
+    const badge = p.mastered ? 'マスター' : p.wrong >= 3 ? 'にがて⚠' : `⭐${p.streak}/${MASTER_STREAK}`;
+    const div = document.createElement('div');
+    div.className = `word-item ${cls}`;
+    div.innerHTML = `<span>${w.kotae}（${w.mondai}）</span><span class="wi-badge">${badge}</span>`;
+    container.appendChild(div);
+  });
+}
+
+function confirmResetHistory() {
+  if (!confirm('学習履歴をすべてリセットしますか？\nこの操作は取り消せません。')) return;
+  state = initState();
+  ensureStateForAllWords();
+  saveState();
+  renderHistory();
+  alert('リセットしました。');
+}
+
+/* ─────────────────────────────────────────
+   起動
+───────────────────────────────────────── */
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => loadXlsx());
+} else {
+  loadXlsx();
+}
+</script>
+</body>
+</html>
